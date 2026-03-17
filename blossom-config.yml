@@ -5,6 +5,9 @@ publicDomain: https://blossom.tubestr.app
 
 storage:
   backend: local
+  rules:
+    - type: "*"
+      expiration: 0
 
 upload:
   enabled: true
