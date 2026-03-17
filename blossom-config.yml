@@ -1,7 +1,7 @@
 # Blossom server configuration
 # See https://github.com/hzrd149/blossom-server for full options
 
-publicDomain: blossom.tubestr.app
+publicDomain: https://blossom.tubestr.app
 
 storage:
   backend: local

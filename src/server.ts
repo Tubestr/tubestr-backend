@@ -154,7 +154,7 @@ export async function buildServer(): Promise<BuildResult> {
       }
     });
 
-    return { upload_id: upload.id, blossom_url: env.blossom.serverUrl };
+    return { upload_id: upload.id, blossom_url: env.blossom.publicUrl };
   });
 
   interface UploadCompleteBody {
