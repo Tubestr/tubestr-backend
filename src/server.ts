@@ -6,7 +6,7 @@ import { randomBytes } from 'crypto';
 import { env } from './config';
 import { verifyNip98 } from './nip98';
 import { prisma } from './prisma';
-import { s3PresignDownload, s3PresignUpload } from './s3';
+import { getBlobUrl } from './blossom';
 import {
   getEntitlementForNpub,
   upsertAppleNotification,
@@ -114,13 +114,13 @@ export async function buildServer(): Promise<BuildResult> {
     return { npub: configuredNpub };
   });
 
-  interface PresignUploadBody {
+  interface UploadAuthorizeBody {
     filename?: string;
     content_type?: string;
     size_bytes?: number;
   }
 
-  app.post<{ Body: PresignUploadBody }>('/presign/upload', async (req) => {
+  app.post<{ Body: UploadAuthorizeBody }>('/upload/authorize', async (req) => {
     requireAuth(req);
 
     const { filename, content_type, size_bytes } = req.body ?? {};
@@ -133,13 +133,9 @@ export async function buildServer(): Promise<BuildResult> {
       throw app.httpErrors.paymentRequired('No active subscription');
     }
 
-    const key = `videos/${req.npub}/${Date.now()}/${filename}`;
-    const presign = await s3PresignUpload({ key, contentType: content_type });
-
-    await prisma.upload.create({
+    const upload = await prisma.upload.create({
       data: {
         npub: req.npub!,
-        objectKey: key,
         status: 'pending',
         sizeBytes: BigInt(size_bytes),
         contentType: content_type
@@ -158,21 +154,58 @@ export async function buildServer(): Promise<BuildResult> {
       }
     });
 
-    return { key, ...presign };
+    return { upload_id: upload.id, blossom_url: env.blossom.serverUrl };
   });
 
-  interface PresignDownloadBody {
-    key?: string;
+  interface UploadCompleteBody {
+    upload_id?: string;
+    sha256?: string;
+    size_bytes?: number;
   }
 
-  app.post<{ Body: PresignDownloadBody }>('/presign/download', async (req) => {
+  app.post<{ Body: UploadCompleteBody }>('/upload/complete', async (req) => {
     requireAuth(req);
-    const { key } = req.body ?? {};
-    if (!key) {
-      throw app.httpErrors.badRequest('key is required');
+
+    const { upload_id, sha256, size_bytes } = req.body ?? {};
+    if (!upload_id || !sha256) {
+      throw app.httpErrors.badRequest('upload_id and sha256 are required');
+    }
+    if (!/^[a-f0-9]{64}$/.test(sha256)) {
+      throw app.httpErrors.badRequest('sha256 must be a 64-character hex string');
     }
 
-    return s3PresignDownload({ key });
+    const upload = await prisma.upload.findUnique({ where: { id: upload_id } });
+    if (!upload || upload.npub !== req.npub) {
+      throw app.httpErrors.notFound('Upload not found');
+    }
+    if (upload.status !== 'pending') {
+      throw app.httpErrors.conflict('Upload already completed');
+    }
+
+    await prisma.upload.update({
+      where: { id: upload_id },
+      data: {
+        sha256,
+        status: 'uploaded',
+        ...(typeof size_bytes === 'number' ? { sizeBytes: BigInt(size_bytes) } : {})
+      }
+    });
+
+    return { url: getBlobUrl(sha256) };
+  });
+
+  interface DownloadUrlBody {
+    sha256?: string;
+  }
+
+  app.post<{ Body: DownloadUrlBody }>('/download/url', async (req) => {
+    requireAuth(req);
+    const { sha256 } = req.body ?? {};
+    if (!sha256) {
+      throw app.httpErrors.badRequest('sha256 is required');
+    }
+
+    return { url: getBlobUrl(sha256) };
   });
 
   app.post('/webhooks/appstore', async (req) => {

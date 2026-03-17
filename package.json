@@ -1,7 +1,7 @@
 {
   "name": "mytube-backend",
   "version": "1.0.0",
-  "description": "Fastify + TypeScript backend for MyTube with NIP-98 auth, S3 presigners, and store webhooks",
+  "description": "Fastify + TypeScript backend for MyTube with NIP-98 auth, Blossom storage, and store webhooks",
   "main": "dist/server.js",
   "engines": {
     "node": ">=20"
@@ -17,8 +17,6 @@
     "test:watch": "cross-env NODE_ENV=test vitest"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.921.0",
-    "@aws-sdk/s3-request-presigner": "^3.921.0",
     "@fastify/cors": "^11.1.0",
     "@fastify/sensible": "^6.0.1",
     "@googleapis/androidpublisher": "^32.0.0",

@@ -46,7 +46,7 @@ model Usage {
 model Upload {
   id          String   @id @default(cuid())
   npub        String
-  objectKey   String   @unique
+  sha256      String?  @unique
   status      String   // pending | uploaded | indexed
   sizeBytes   BigInt
   contentType String

@@ -1,0 +1,34 @@
+services:
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - tubestr
+      - blossom
+
+  tubestr:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      BLOSSOM_SERVER_URL: http://blossom:3000
+      BLOSSOM_PUBLIC_URL: https://blossom.tubestr.app
+      DATABASE_URL: file:/data/tubestr.db
+    volumes:
+      - tubestr_data:/data
+    depends_on:
+      - blossom
+
+  blossom:
+    image: ghcr.io/hzrd149/blossom-server:master
+    restart: unless-stopped
+    volumes:
+      - blossom_data:/app/data
+      - ./blossom-config.yml:/app/config.yml
+
+volumes:
+  tubestr_data:
+  blossom_data:

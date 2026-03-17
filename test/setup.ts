@@ -5,13 +5,8 @@ import path from 'node:path';
 process.env.NODE_ENV = process.env.NODE_ENV ?? 'test';
 process.env.PORT = process.env.PORT ?? '0';
 process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'file:./prisma/test.db';
-process.env.S3_REGION = process.env.S3_REGION ?? 'us-east-1';
-process.env.S3_ENDPOINT = process.env.S3_ENDPOINT ?? 'http://localhost:9000';
-process.env.S3_BUCKET = process.env.S3_BUCKET ?? 'test-bucket';
-process.env.S3_PATH_STYLE = process.env.S3_PATH_STYLE ?? 'true';
-process.env.S3_ACCESS_KEY = process.env.S3_ACCESS_KEY ?? 'test-access-key';
-process.env.S3_SECRET_KEY = process.env.S3_SECRET_KEY ?? 'test-secret-key';
-process.env.PRESIGN_TTL_SECONDS = process.env.PRESIGN_TTL_SECONDS ?? '600';
+process.env.BLOSSOM_SERVER_URL = process.env.BLOSSOM_SERVER_URL ?? 'http://localhost:3000';
+process.env.BLOSSOM_PUBLIC_URL = process.env.BLOSSOM_PUBLIC_URL ?? 'http://localhost:3000';
 process.env.NIP98_CHALLENGE_TTL_SECONDS =
   process.env.NIP98_CHALLENGE_TTL_SECONDS ?? '300';
 process.env.APPLE_ENVIRONMENT = process.env.APPLE_ENVIRONMENT ?? 'Sandbox';

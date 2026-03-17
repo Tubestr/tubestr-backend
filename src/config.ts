@@ -21,14 +21,9 @@ export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'production',
   nip98ChallengeTtlSeconds: toNumber(process.env.NIP98_CHALLENGE_TTL_SECONDS ?? '300', 300),
   databaseUrl: requireEnv('DATABASE_URL'),
-  s3: {
-    region: requireEnv('S3_REGION'),
-    endpoint: process.env.S3_ENDPOINT,
-    bucket: requireEnv('S3_BUCKET'),
-    pathStyle: (process.env.S3_PATH_STYLE ?? 'false').toLowerCase() === 'true',
-    accessKeyId: requireEnv('S3_ACCESS_KEY'),
-    secretAccessKey: requireEnv('S3_SECRET_KEY'),
-    presignTtl: toNumber(process.env.PRESIGN_TTL_SECONDS ?? '600', 600)
+  blossom: {
+    serverUrl: requireEnv('BLOSSOM_SERVER_URL'),
+    publicUrl: requireEnv('BLOSSOM_PUBLIC_URL'),
   },
   freeTrial: {
     enabled: (process.env.FREE_TRIAL_MODE ?? 'false').toLowerCase() === 'true',
