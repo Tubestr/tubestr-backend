@@ -6,21 +6,32 @@ services:
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
     depends_on:
-      - tubestr
-      - blossom
+      tubestr:
+        condition: service_healthy
+      blossom:
+        condition: service_started
 
   tubestr:
     build: .
     restart: unless-stopped
     env_file: .env
     environment:
+      HOST: 0.0.0.0
       BLOSSOM_SERVER_URL: http://blossom:3000
       BLOSSOM_PUBLIC_URL: https://blossom.tubestr.app
       DATABASE_URL: file:/data/tubestr.db
+      SAFETY_HQ_MDK_DB_PATH: /data/safety-hq-mdk.sqlite
     volumes:
       - tubestr_data:/data
     depends_on:
-      - blossom
+      blossom:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   blossom:
     image: ghcr.io/hzrd149/blossom-server:master

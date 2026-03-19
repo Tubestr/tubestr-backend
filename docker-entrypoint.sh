@@ -1,7 +1,6 @@
 #!/bin/sh
-set -e
+set -eu
 
-echo "Running Prisma migrations..."
-npx prisma migrate deploy
+mkdir -p /data
 
 exec "$@"
