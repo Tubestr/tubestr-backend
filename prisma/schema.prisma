@@ -56,6 +56,21 @@ model Upload {
   @@index([npub])
 }
 
+model BetaFunnelEvent {
+  id          String   @id @default(cuid())
+  source      String
+  eventName   String
+  platform    String?
+  familyHash  String?
+  sessionId   String?
+  contextJson String?
+  createdAt   DateTime @default(now())
+
+  @@index([eventName, createdAt])
+  @@index([familyHash, eventName])
+  @@index([source, createdAt])
+}
+
 model ApplePurchase {
   originalTxId    String  @id
   npub            String
