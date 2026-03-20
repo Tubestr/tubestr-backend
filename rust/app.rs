@@ -7,7 +7,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, Method, StatusCode},
     response::IntoResponse,
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use chrono::Utc;
 use rusqlite::{OptionalExtension, params};
@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use uuid::Uuid;
+
+use sha2::{Digest, Sha256};
 
 use crate::{
     auth::{AuthenticatedUser, ChallengeStore, parse_public_key_hex, require_nip98_auth},
@@ -110,6 +112,61 @@ struct UploadRow {
     status: String,
 }
 
+#[derive(Debug, Serialize)]
+struct AccountDeleteResponse {
+    ok: bool,
+    npub: String,
+    deleted: AccountDeletedCounts,
+}
+
+#[derive(Debug, Serialize)]
+struct AccountDeletedCounts {
+    apple_purchases: usize,
+    google_purchases: usize,
+    uploads: usize,
+    entitlements: usize,
+    usage: usize,
+    users: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct BetaFunnelEventBody {
+    source: Option<String>,
+    event_name: Option<String>,
+    platform: Option<String>,
+    session_id: Option<String>,
+    context: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize)]
+struct BetaFunnelEventResponse {
+    ok: bool,
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct BetaFunnelSummaryQuery {
+    days: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct BetaFunnelSummaryResponse {
+    window_days: i64,
+    since: String,
+    totals: usize,
+    events: Vec<BetaFunnelEventSummary>,
+}
+
+#[derive(Debug, Serialize)]
+struct BetaFunnelEventSummary {
+    event_name: String,
+    source: String,
+    total: usize,
+    unique_families: usize,
+}
+
+const BETA_FUNNEL_SOURCES: &[&str] = &["app", "marketing"];
+
 pub async fn build_state(config: AppConfig) -> anyhow::Result<AppState> {
     let pool = db::connect(&config.database_url).await?;
     let safety_hq = SafetyHqService::new(config.clone(), pool.clone())
@@ -134,6 +191,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/upload/authorize", post(upload_authorize))
         .route("/upload/complete", post(upload_complete))
         .route("/download/url", post(download_url))
+        .route("/account", delete(delete_account))
+        .route("/beta/funnel-events", post(beta_funnel_event))
+        .route("/beta/funnel-summary", get(beta_funnel_summary))
         .route("/webhooks/appstore", post(webhook_appstore))
         .route("/webhooks/play", post(webhook_play))
         .route("/v1/safety-hq/bootstrap", get(safety_hq_bootstrap))
@@ -404,6 +464,191 @@ async fn webhook_appstore() -> Json<serde_json::Value> {
 
 async fn webhook_play() -> Json<serde_json::Value> {
     Json(serde_json::json!({ "ok": true }))
+}
+
+async fn delete_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<AccountDeleteResponse>, (StatusCode, String)> {
+    let auth = authenticated(&state, &headers, Method::DELETE, "/account", None).await?;
+    let npub = auth.npub.clone();
+
+    let deleted = {
+        let conn = state.pool.lock().expect("db lock poisoned");
+        let apple = conn
+            .execute(
+                r#"DELETE FROM "ApplePurchase" WHERE "npub" = ?"#,
+                params![&npub],
+            )
+            .map_err(internal_error)?;
+        let google = conn
+            .execute(
+                r#"DELETE FROM "GooglePurchase" WHERE "npub" = ?"#,
+                params![&npub],
+            )
+            .map_err(internal_error)?;
+        let uploads = conn
+            .execute(r#"DELETE FROM "Upload" WHERE "npub" = ?"#, params![&npub])
+            .map_err(internal_error)?;
+        let entitlements = conn
+            .execute(
+                r#"DELETE FROM "Entitlement" WHERE "npub" = ?"#,
+                params![&npub],
+            )
+            .map_err(internal_error)?;
+        let usage = conn
+            .execute(r#"DELETE FROM "Usage" WHERE "npub" = ?"#, params![&npub])
+            .map_err(internal_error)?;
+        let users = conn
+            .execute(r#"DELETE FROM "User" WHERE "npub" = ?"#, params![&npub])
+            .map_err(internal_error)?;
+
+        AccountDeletedCounts {
+            apple_purchases: apple,
+            google_purchases: google,
+            uploads,
+            entitlements,
+            usage,
+            users,
+        }
+    };
+
+    Ok(Json(AccountDeleteResponse {
+        ok: true,
+        npub,
+        deleted,
+    }))
+}
+
+fn hash_family_npub(npub: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(format!("beta-funnel:{npub}"));
+    format!("{:x}", hasher.finalize())
+}
+
+async fn beta_funnel_event(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<BetaFunnelEventBody>,
+) -> Result<Json<BetaFunnelEventResponse>, (StatusCode, String)> {
+    // Auth is optional for this endpoint — used only for familyHash
+    let auth = authenticated(&state, &headers, Method::POST, "/beta/funnel-events", None)
+        .await
+        .ok();
+
+    let source = body
+        .source
+        .as_deref()
+        .map(|s| s.trim().to_lowercase())
+        .unwrap_or_default();
+    if source.is_empty() || !BETA_FUNNEL_SOURCES.contains(&source.as_str()) {
+        return Err(bad_request("source must be one of: app, marketing"));
+    }
+
+    let event_name = body
+        .event_name
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+    if event_name.is_empty() {
+        return Err(bad_request("event_name is required"));
+    }
+
+    let platform = body
+        .platform
+        .as_deref()
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty());
+    let session_id = body
+        .session_id
+        .as_deref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let context_json = body.context.as_ref().map(|v| v.to_string());
+    let family_hash = auth.as_ref().map(|a| hash_family_npub(&a.npub));
+
+    let id = Uuid::new_v4().to_string();
+    {
+        let conn = state.pool.lock().expect("db lock poisoned");
+        conn.execute(
+            r#"
+            INSERT INTO "BetaFunnelEvent" ("id", "source", "eventName", "platform", "familyHash", "sessionId", "contextJson")
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            "#,
+            params![&id, &source, &event_name, &platform, &family_hash, &session_id, &context_json],
+        )
+        .map_err(internal_error)?;
+    }
+
+    Ok(Json(BetaFunnelEventResponse { ok: true, id }))
+}
+
+async fn beta_funnel_summary(
+    State(state): State<AppState>,
+    Query(query): Query<BetaFunnelSummaryQuery>,
+) -> Result<Json<BetaFunnelSummaryResponse>, (StatusCode, String)> {
+    let days: i64 = query
+        .days
+        .as_deref()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(7)
+        .max(1)
+        .min(90);
+
+    let since = Utc::now() - chrono::Duration::days(days);
+    let since_str = since.to_rfc3339();
+
+    let rows: Vec<(String, String, Option<String>)> = {
+        let conn = state.pool.lock().expect("db lock poisoned");
+        let mut stmt = conn
+            .prepare(
+                r#"
+                SELECT "eventName", "source", "familyHash"
+                FROM "BetaFunnelEvent"
+                WHERE "createdAt" >= ?
+                ORDER BY "createdAt" ASC
+                "#,
+            )
+            .map_err(internal_error)?;
+        let rows = stmt
+            .query_map(params![&since_str], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .map_err(internal_error)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(internal_error)?
+    };
+
+    let total = rows.len();
+    let mut by_event: HashMap<String, (String, usize, std::collections::HashSet<String>)> =
+        HashMap::new();
+
+    for (event_name, source, family_hash) in &rows {
+        let entry = by_event
+            .entry(event_name.clone())
+            .or_insert_with(|| (source.clone(), 0, std::collections::HashSet::new()));
+        entry.1 += 1;
+        if let Some(fh) = family_hash {
+            entry.2.insert(fh.clone());
+        }
+    }
+
+    let mut events: Vec<BetaFunnelEventSummary> = by_event
+        .into_iter()
+        .map(|(event_name, (source, total, families))| BetaFunnelEventSummary {
+            event_name,
+            source,
+            total,
+            unique_families: families.len(),
+        })
+        .collect();
+    events.sort_by(|a, b| a.event_name.cmp(&b.event_name));
+
+    Ok(Json(BetaFunnelSummaryResponse {
+        window_days: days,
+        since: since_str,
+        totals: total,
+        events,
+    }))
 }
 
 async fn safety_hq_bootstrap(

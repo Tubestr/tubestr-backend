@@ -136,3 +136,18 @@ CREATE TABLE IF NOT EXISTS "case_status_history" (
 );
 
 CREATE INDEX IF NOT EXISTS "case_status_history_report_id_idx" ON "case_status_history"("report_id");
+
+CREATE TABLE IF NOT EXISTS "BetaFunnelEvent" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "source" TEXT NOT NULL,
+    "eventName" TEXT NOT NULL,
+    "platform" TEXT,
+    "familyHash" TEXT,
+    "sessionId" TEXT,
+    "contextJson" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS "BetaFunnelEvent_eventName_createdAt_idx" ON "BetaFunnelEvent"("eventName", "createdAt");
+CREATE INDEX IF NOT EXISTS "BetaFunnelEvent_familyHash_eventName_idx" ON "BetaFunnelEvent"("familyHash", "eventName");
+CREATE INDEX IF NOT EXISTS "BetaFunnelEvent_source_createdAt_idx" ON "BetaFunnelEvent"("source", "createdAt");
