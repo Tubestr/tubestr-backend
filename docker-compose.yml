@@ -36,6 +36,8 @@ services:
   blossom:
     image: ghcr.io/hzrd149/blossom-server:master
     restart: unless-stopped
+    environment:
+      BLOSSOM_ADMIN_PASSWORD: ${BLOSSOM_ADMIN_PASSWORD}
     volumes:
       - blossom_data:/app/data
       - ./blossom-config.yml:/app/config.yml
