@@ -732,6 +732,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
 
 [[package]]
+name = "fast-thumbhash"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5243a22cce29dff488db8ef03d8e0e54dd06cd3e6d98475160dff390fa414de2"
+
+[[package]]
 name = "fdeflate"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1783,16 +1789,17 @@ checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 [[package]]
 name = "mdk-core"
 version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8124f4524103f43baf0e5d6be44b40ee8c1bd86afca7986c926dedb9b3f7cde5"
+source = "git+https://github.com/marmot-protocol/mdk?rev=8a8d06c19d617394b0e268f5f9adfad34db3cdf6#8a8d06c19d617394b0e268f5f9adfad34db3cdf6"
 dependencies = [
  "base64",
  "blurhash",
  "chacha20poly1305",
+ "fast-thumbhash",
  "hex",
  "hkdf",
  "image",
  "kamadak-exif",
+ "mdk-macros",
  "mdk-storage-traits",
  "nostr",
  "openmls",
@@ -1804,13 +1811,18 @@ dependencies = [
  "thiserror 2.0.18",
  "tls_codec",
  "tracing",
+ "zeroize",
 ]
+
+[[package]]
+name = "mdk-macros"
+version = "0.7.1"
+source = "git+https://github.com/marmot-protocol/mdk?rev=8a8d06c19d617394b0e268f5f9adfad34db3cdf6#8a8d06c19d617394b0e268f5f9adfad34db3cdf6"
 
 [[package]]
 name = "mdk-sqlite-storage"
 version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40898e98347ebdd4f3ddbe50b043cad5deca3d728d1f74d8ad761d01e51cd805"
+source = "git+https://github.com/marmot-protocol/mdk?rev=8a8d06c19d617394b0e268f5f9adfad34db3cdf6#8a8d06c19d617394b0e268f5f9adfad34db3cdf6"
 dependencies = [
  "getrandom 0.4.2",
  "hex",
@@ -1831,12 +1843,12 @@ dependencies = [
 [[package]]
 name = "mdk-storage-traits"
 version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b479194e63a5b74f0dd9ea04ee29fad0922b4a6d97fec770d9c62169c7ce6472"
+source = "git+https://github.com/marmot-protocol/mdk?rev=8a8d06c19d617394b0e268f5f9adfad34db3cdf6#8a8d06c19d617394b0e268f5f9adfad34db3cdf6"
 dependencies = [
  "nostr",
  "openmls",
  "openmls_traits",
+ "pastey",
  "postcard",
  "serde",
  "serde_json",

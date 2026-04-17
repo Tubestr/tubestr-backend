@@ -11,11 +11,11 @@ use std::{
 use anyhow::{Context, anyhow};
 use chrono::{DateTime, Utc};
 use mdk_core::{MDK, messages::MessageProcessingResult};
-use mdk_sqlite_storage::MdkSqliteStorage;
+use mdk_sqlite_storage::{EncryptionConfig, MdkSqliteStorage};
 use mdk_storage_traits::messages::types::Message as MdkMessage;
 use nostr_sdk::prelude::{
     Alphabet, Event, EventBuilder, Filter, JsonUtil, Keys, Kind, PublicKey, RelayPoolNotification,
-    SingleLetterTag, SubscriptionId, Tag, Timestamp, UnwrappedGift,
+    SingleLetterTag, SubscriptionId, Timestamp, UnwrappedGift,
 };
 use rusqlite::{OptionalExtension, params, params_from_iter};
 use serde::{Deserialize, Serialize};
@@ -25,7 +25,7 @@ use tracing::{error, info, warn};
 use crate::{config::AppConfig, db::Database};
 
 const REPORT_KIND: u16 = 4547;
-const KEY_PACKAGE_KIND: u16 = 443;
+const KEY_PACKAGE_KIND: u16 = 30443;
 const WELCOME_KIND: u16 = 444;
 const GIFT_WRAP_KIND: u16 = 1059;
 const GROUP_COMMIT_KIND: u16 = 445;
@@ -284,8 +284,27 @@ impl SafetyHqService {
                 .with_context(|| "failed to create Safety HQ data directory")?;
         }
 
-        let mdk_storage = MdkSqliteStorage::new_unencrypted(&config.safety_hq_mdk_db_path)
-            .with_context(|| "failed to initialize MDK sqlite storage")?;
+        let mdk_storage = match config.safety_hq_mdk_db_key_hex.as_deref() {
+            Some(key_hex) => {
+                let key_bytes = hex::decode(key_hex)
+                    .with_context(|| "SAFETY_HQ_MDK_DB_KEY_HEX must be hex-encoded")?;
+                let key: [u8; 32] = key_bytes
+                    .try_into()
+                    .map_err(|_| anyhow!("SAFETY_HQ_MDK_DB_KEY_HEX must decode to 32 bytes"))?;
+                MdkSqliteStorage::new_with_key(
+                    &config.safety_hq_mdk_db_path,
+                    EncryptionConfig::new(key),
+                )
+                .with_context(|| "failed to initialize encrypted MDK sqlite storage")?
+            }
+            None => {
+                warn!(
+                    "SAFETY_HQ_MDK_DB_KEY_HEX not set; Safety HQ MLS state stored unencrypted"
+                );
+                MdkSqliteStorage::new_unencrypted(&config.safety_hq_mdk_db_path)
+                    .with_context(|| "failed to initialize MDK sqlite storage")?
+            }
+        };
         let mdk = MDK::new(mdk_storage);
 
         let client = nostr_sdk::Client::builder().signer(keys.clone()).build();
@@ -365,19 +384,13 @@ impl SafetyHqService {
         let (event_json, event_id) = {
             let inner = self.inner.lock().await;
             let relay_urls = self.config.safety_hq_relays.clone();
-            let (key_package, tags, _hash_ref) = inner
+            let key_package = inner
                 .mdk
                 .create_key_package_for_event(&public_key, parse_relay_urls(&relay_urls)?)
                 .with_context(|| "failed to create Safety HQ key package")?;
 
-            let tags = tags
-                .into_iter()
-                .map(Tag::parse)
-                .collect::<Result<Vec<_>, _>>()
-                .with_context(|| "failed to encode key package tags")?;
-
-            let event = EventBuilder::new(Kind::Custom(KEY_PACKAGE_KIND), key_package)
-                .tags(tags)
+            let event = EventBuilder::new(Kind::Custom(KEY_PACKAGE_KIND), key_package.content)
+                .tags(key_package.tags_30443)
                 .sign_with_keys(&inner.keys)
                 .with_context(|| "failed to sign key package event")?;
 
@@ -706,6 +719,14 @@ impl SafetyHqService {
             MessageProcessingResult::ApplicationMessage(message) => {
                 if message.kind.as_u16() == REPORT_KIND {
                     self.ingest_report(message, &event, relay_url).await?;
+                } else {
+                    info!(
+                        relay = relay_url,
+                        wrapper_event_id = event.id.to_hex(),
+                        inner_kind = message.kind.as_u16(),
+                        mls_group_id = hex::encode(message.mls_group_id.as_slice()),
+                        "ignoring non-report application message in Safety HQ group"
+                    );
                 }
             }
             MessageProcessingResult::Commit { mls_group_id } => {
@@ -1215,6 +1236,7 @@ mod tests {
             safety_hq_relays: vec!["wss://relay.test".to_string()],
             safety_hq_version: "v1".to_string(),
             safety_hq_mdk_db_path: mdk_db_path,
+            safety_hq_mdk_db_key_hex: None,
         }
     }
 

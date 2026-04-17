@@ -19,6 +19,7 @@ pub struct AppConfig {
     pub safety_hq_relays: Vec<String>,
     pub safety_hq_version: String,
     pub safety_hq_mdk_db_path: String,
+    pub safety_hq_mdk_db_key_hex: Option<String>,
 }
 
 impl AppConfig {
@@ -43,6 +44,7 @@ impl AppConfig {
             safety_hq_version: env::var("SAFETY_HQ_VERSION").unwrap_or_else(|_| "v1".to_string()),
             safety_hq_mdk_db_path: env::var("SAFETY_HQ_MDK_DB_PATH")
                 .unwrap_or_else(|_| "./data/safety-hq-mdk.sqlite".to_string()),
+            safety_hq_mdk_db_key_hex: env::var("SAFETY_HQ_MDK_DB_KEY_HEX").ok(),
             database_url: normalize_database_url(&database_url),
         })
     }

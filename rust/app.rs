@@ -778,6 +778,7 @@ mod tests {
             safety_hq_relays: vec!["wss://relay.test".to_string()],
             safety_hq_version: "v1".to_string(),
             safety_hq_mdk_db_path: format!("./prisma/mdk-test-{}.db", Uuid::new_v4()),
+            safety_hq_mdk_db_key_hex: None,
         };
         build_state(config).await.expect("state")
     }
@@ -903,5 +904,40 @@ mod tests {
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert!(json["service_public_key_hex"].as_str().unwrap().len() == 64);
+
+        let event_json = json["signed_key_package_event_json"].as_str().unwrap();
+        let event: serde_json::Value = serde_json::from_str(event_json).unwrap();
+        assert_eq!(event["kind"].as_u64().unwrap(), 30443);
+
+        let tags = event["tags"].as_array().unwrap();
+        let tag_values: Vec<Vec<&str>> = tags
+            .iter()
+            .map(|tag| {
+                tag.as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|value| value.as_str().unwrap_or_default())
+                    .collect()
+            })
+            .collect();
+
+        let d_tag = tag_values.iter().find(|tag| tag.first() == Some(&"d")).expect("d tag");
+        assert_eq!(d_tag.len(), 2);
+        assert_eq!(d_tag[1].len(), 64);
+        assert!(d_tag[1].chars().all(|c| c.is_ascii_hexdigit()));
+
+        assert!(
+            tag_values
+                .iter()
+                .any(|tag| tag.as_slice() == ["encoding", "base64"]),
+            "expected encoding=base64 tag"
+        );
+        assert!(
+            tag_values
+                .iter()
+                .any(|tag| tag.first() == Some(&"mls_proposals")
+                    && tag.iter().skip(1).any(|value| *value == "0x000a")),
+            "expected mls_proposals tag to advertise 0x000a (SelfRemove)"
+        );
     }
 }
